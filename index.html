@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Counter — free token and cost estimator for AI prompts</title>
+<meta name="description" content="Paste a prompt or document and see roughly how many tokens it is, whether it fits common context windows, and what a request would cost. Free, no sign-up, runs in your browser.">
+<meta property="og:title" content="Token Counter — free token and cost estimator for AI prompts">
+<meta property="og:description" content="Estimate tokens, context-window fit and cost for any prompt. Free, no sign-up, nothing leaves your browser.">
+<style>
+:root{
+  --bg:#0e0e11; --panel:#17171c; --line:#2a2a32; --text:#ececf1; --muted:#9a9aa6;
+  --accent:#e5243b; --accent-soft:#3a1219; --good:#3ecf8e; --warn:#f5a524; --track:#24242b;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f7f7f9; --panel:#ffffff; --line:#e3e3e8; --text:#16161b; --muted:#5d5d68;
+    --accent:#d01f35; --accent-soft:#fde8eb; --good:#11865a; --warn:#a86a00; --track:#ececf0;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:40px 16px 64px}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:0 0 8px;letter-spacing:-.02em}
+h1 span{color:var(--accent)}
+h2{font-size:18px;margin:0 0 12px}
+.lead{color:var(--muted);margin:0 0 28px;max-width:640px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+label{display:block;font-weight:600;margin-bottom:8px}
+textarea{width:100%;min-height:170px;resize:vertical;background:transparent;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font:inherit}
+textarea:focus,input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:12px}
+.stat b{display:block;font-size:24px;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat.main b{color:var(--accent)}
+.stat span{color:var(--muted);font-size:13px}
+.note{color:var(--muted);font-size:14px;margin:10px 0 0}
+.fit{display:grid;gap:10px}
+.fitrow{display:grid;grid-template-columns:86px 1fr 120px;gap:12px;align-items:center;font-size:14px}
+.bar{height:10px;border-radius:6px;background:var(--track);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:6px;background:var(--good);width:0}
+.fitrow .v{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid label{font-weight:500;font-size:14px;color:var(--muted);margin-bottom:6px}
+input{width:100%;background:transparent;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+.cost{margin-top:14px;font-size:15px}
+.cost b{font-size:22px;font-variant-numeric:tabular-nums}
+.cta{margin-top:12px;padding:18px;border-radius:14px;background:var(--accent-soft);border:1px solid var(--line)}
+.cta a{color:var(--accent);font-weight:600}
+.faq h3{font-size:16px;margin:16px 0 4px}
+.faq p{margin:0;color:var(--muted)}
+footer{margin-top:36px;color:var(--muted);font-size:14px}
+footer a{color:var(--muted)}
+@media (max-width:620px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .grid{grid-template-columns:1fr}
+  .fitrow{grid-template-columns:64px 1fr 92px;gap:8px}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Token <span>Counter</span></h1>
+  <p class="lead">Paste a prompt, a document or a chat log. See roughly how many tokens it is, whether it fits a context window, and what a request would cost. Free, no sign-up, nothing leaves your browser.</p>
+
+  <section class="panel">
+    <label for="t">Your text</label>
+    <textarea id="t" placeholder="Paste text here…"></textarea>
+    <div class="stats">
+      <div class="stat main"><b id="tok">0</b><span>tokens (estimate)</span></div>
+      <div class="stat"><b id="wrd">0</b><span>words</span></div>
+      <div class="stat"><b id="chr">0</b><span>characters</span></div>
+      <div class="stat"><b id="lin">0</b><span>lines</span></div>
+    </div>
+    <p class="note">This is an estimate, usually within about 15% of the real count. Every model family uses its own tokenizer, so exact numbers differ between providers.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Does it fit?</h2>
+    <div class="fit" id="fit"></div>
+    <p class="note">Leave room for the answer: a model's reply counts against the same window.</p>
+  </section>
+
+  <section class="panel">
+    <h2>What would it cost?</h2>
+    <div class="grid">
+      <div><label for="pin">Input price, $ per 1M tokens</label><input id="pin" type="number" min="0" step="0.01" value="3"></div>
+      <div><label for="pout">Output price, $ per 1M tokens</label><input id="pout" type="number" min="0" step="0.01" value="15"></div>
+      <div><label for="outt">Expected reply, tokens</label><input id="outt" type="number" min="0" step="50" value="500"></div>
+    </div>
+    <div class="cost">One request: <b id="c1">$0.0000</b> &nbsp;·&nbsp; 1,000 requests: <b id="c1k">$0.00</b></div>
+    <p class="note">The prices above are placeholders. Enter the current rates from your provider's pricing page.</p>
+  </section>
+
+  <div class="cta">
+    <strong>Rather not count tokens at all?</strong><br>
+    <a href="https://madgpt.io/?ref=token-counter" target="_blank" rel="noopener">MadGPT</a> has unlimited requests on every plan: 7 models in one chat, an opt-in Uncensored model and a VS Code agent. Free trial in the Telegram bot.
+  </div>
+
+  <section class="faq">
+    <h3>What is a token?</h3>
+    <p>Models don't read characters or words. They read tokens: chunks of text that are often a short word or part of a longer one. In English, one token is about four characters, or roughly three quarters of a word.</p>
+    <h3>Why do other languages use more tokens?</h3>
+    <p>Tokenizers are trained mostly on English. Cyrillic, Arabic, Hindi and similar scripts usually take about twice as many tokens per word, and Chinese, Japanese and Korean take roughly one token per character.</p>
+    <h3>Why does the token count matter?</h3>
+    <p>It sets two limits: how much text fits into one conversation (the context window) and how much an API request costs.</p>
+  </section>
+
+  <footer>
+    More free tools: <a href="https://madgpt1.github.io/prompt-upgrader/">Prompt Upgrader</a> · <a href="https://madgpt1.github.io/prompt-library/">Prompt Library</a>.
+    Made by the <a href="https://madgpt.io/?ref=token-counter">MadGPT</a> team. Runs entirely in your browser.
+  </footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const WINDOWS=[["8K",8000],["32K",32000],["128K",128000],["200K",200000],["1M",1000000]];
+const fmt=n=>n.toLocaleString("en-US");
+
+// Heuristic: CJK ≈ 1 token per character, other non-Latin letters ≈ 1 per 2.2 characters,
+// everything else ≈ 1 per 4 characters. Good to roughly ±15% across common tokenizers.
+function estimate(s){
+  if(!s) return 0;
+  const cjk=(s.match(/[぀-ヿ㐀-䶿一-鿿가-힯]/g)||[]).length;
+  const other=(s.match(/[Ͱ-ϿЀ-ԯ֐-ۿऀ-෿฀-๿]/g)||[]).length;
+  const rest=s.length-cjk-other;
+  return Math.ceil(cjk*1.0+other/2.2+rest/4);
+}
+$("fit").innerHTML=WINDOWS.map(([n],i)=>`<div class="fitrow"><span>${n} window</span><div class="bar"><i id="b${i}"></i></div><span class="v" id="v${i}">0%</span></div>`).join("");
+
+function update(){
+  const s=$("t").value, tok=estimate(s);
+  $("tok").textContent=fmt(tok);
+  $("chr").textContent=fmt(s.length);
+  $("wrd").textContent=fmt((s.trim().match(/\S+/g)||[]).length);
+  $("lin").textContent=fmt(s?s.split("\n").length:0);
+  WINDOWS.forEach(([,size],i)=>{
+    const p=tok/size*100, bar=$("b"+i);
+    bar.style.width=Math.min(p,100)+"%";
+    bar.style.background=p>100?"var(--accent)":p>75?"var(--warn)":"var(--good)";
+    $("v"+i).textContent=p>100?"does not fit":(p<0.1&&tok?"<0.1":p.toFixed(p<10?1:0))+"% used";
+  });
+  const pin=Math.max(0,+$("pin").value||0), pout=Math.max(0,+$("pout").value||0), out=Math.max(0,+$("outt").value||0);
+  const one=(tok*pin+out*pout)/1e6;
+  $("c1").textContent="$"+one.toFixed(one<1?4:2);
+  $("c1k").textContent="$"+(one*1000).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+["t","pin","pout","outt"].forEach(id=>$(id).addEventListener("input",update));
+update();
+</script>
+</body>
+</html>
